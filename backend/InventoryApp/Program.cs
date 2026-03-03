@@ -9,23 +9,18 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Connection string ─────────────────────────────────────────────────────────
-// Render sets DATABASE_URL in postgres://user:pass@host:port/db format.
-// Npgsql needs Host=...;Username=... format — we convert it here.
 static string GetConnectionString(IConfiguration config)
 {
     var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
     if (!string.IsNullOrEmpty(databaseUrl))
     {
-        // Render gives: postgresql://user:pass@host/db  (no port)
-        //            or postgresql://user:pass@host:5432/db
-        var uri = new Uri(databaseUrl);
+        var uri      = new Uri(databaseUrl);
         var userInfo = uri.UserInfo.Split(':');
-        var user = Uri.UnescapeDataString(userInfo[0]);
-        var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
-        var host = uri.Host;
-        var port = uri.Port > 0 ? uri.Port : 5432;   // default 5432 if not in URL
-        var db   = uri.AbsolutePath.TrimStart('/');
+        var user     = Uri.UnescapeDataString(userInfo[0]);
+        var pass     = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var host     = uri.Host;
+        var port     = uri.Port > 0 ? uri.Port : 5432;
+        var db       = uri.AbsolutePath.TrimStart('/');
         return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
     }
     return config.GetConnectionString("DefaultConnection")!;
@@ -34,18 +29,16 @@ static string GetConnectionString(IConfiguration config)
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(GetConnectionString(builder.Configuration)));
 
-// ── Identity ──────────────────────────────────────────────────────────────────
 builder.Services.AddIdentity<AppUser, IdentityRole>(opt =>
 {
-    opt.Password.RequireDigit = false;
-    opt.Password.RequiredLength = 1;
+    opt.Password.RequireDigit           = false;
+    opt.Password.RequiredLength         = 1;
     opt.Password.RequireNonAlphanumeric = false;
-    opt.Password.RequireUppercase = false;
+    opt.Password.RequireUppercase       = false;
 })
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
 
-// ── JWT + OAuth ───────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("Jwt:Secret is required");
 
@@ -79,9 +72,9 @@ builder.Services.AddAuthentication(opt =>
 .AddCookie("Cookies")
 .AddGoogle(opt =>
 {
-    opt.SignInScheme  = "Cookies";
-    opt.ClientId      = builder.Configuration["Auth:Google:ClientId"]     ?? "";
-    opt.ClientSecret  = builder.Configuration["Auth:Google:ClientSecret"] ?? "";
+    opt.SignInScheme = "Cookies";
+    opt.ClientId     = builder.Configuration["Auth:Google:ClientId"]     ?? "";
+    opt.ClientSecret = builder.Configuration["Auth:Google:ClientSecret"] ?? "";
     opt.Scope.Add("profile");
     opt.Scope.Add("email");
     opt.SaveTokens = true;
@@ -95,7 +88,6 @@ builder.Services.AddAuthentication(opt =>
     opt.Fields.Add("picture");
 });
 
-// ── Services ──────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<ITokenService,    TokenService>();
 builder.Services.AddScoped<ICustomIdService, CustomIdService>();
 builder.Services.AddScoped<ISearchService,   SearchService>();
@@ -105,43 +97,46 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
-// Single-container: frontend is same origin, but allow all so health checks work too
 builder.Services.AddCors(opt =>
     opt.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
 
-// ── Migrate DB with retry (Render DB may take a moment to be ready) ───────────
+// ── STEP 1: Migrations with retry ────────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     var logger  = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var retries = 10;
-    while (retries-- > 0)
+    while (true)
     {
         try
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             await db.Database.MigrateAsync();
-
-            var roles = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-            foreach (var role in new[] { "Admin", "User" })
-                if (!await roles.RoleExistsAsync(role))
-                    await roles.CreateAsync(new IdentityRole(role));
-
-            logger.LogInformation("Database ready.");
+            logger.LogInformation("Migrations applied.");
             break;
         }
         catch (Exception ex)
         {
+            retries--;
             logger.LogWarning("DB not ready, retrying in 3s ({N} left). Error: {Msg}", retries, ex.Message);
-            if (retries == 0) throw;
+            if (retries <= 0) throw;
             await Task.Delay(3000);
         }
     }
 }
 
-// ── Middleware ────────────────────────────────────────────────────────────────
+// ── STEP 2: Seed roles (AFTER tables exist) ───────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var logger      = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    foreach (var role in new[] { "Admin", "User" })
+        if (!await roleManager.RoleExistsAsync(role))
+            await roleManager.CreateAsync(new IdentityRole(role));
+    logger.LogInformation("Roles seeded. Database ready.");
+}
+
 app.UseSwagger();
 app.UseSwaggerUI();
 
@@ -150,7 +145,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// Serve React static files from wwwroot (built into image)
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");

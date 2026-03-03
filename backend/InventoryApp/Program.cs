@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ── GET CONNECTION STRING ────────────────────────────────────────────────
 static string GetConnectionString(IConfiguration config)
 {
     var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
@@ -26,9 +27,11 @@ static string GetConnectionString(IConfiguration config)
     return config.GetConnectionString("DefaultConnection")!;
 }
 
+// ── DB CONTEXT ───────────────────────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(GetConnectionString(builder.Configuration)));
 
+// ── IDENTITY ─────────────────────────────────────────────────────────────
 builder.Services.AddIdentity<AppUser, IdentityRole>(opt =>
 {
     opt.Password.RequireDigit           = false;
@@ -39,6 +42,7 @@ builder.Services.AddIdentity<AppUser, IdentityRole>(opt =>
 .AddEntityFrameworkStores<AppDbContext>()
 .AddDefaultTokenProviders();
 
+// ── JWT ─────────────────────────────────────────────────────────────────
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("Jwt:Secret is required");
 
@@ -88,6 +92,7 @@ builder.Services.AddAuthentication(opt =>
     opt.Fields.Add("picture");
 });
 
+// ── CUSTOM SERVICES ─────────────────────────────────────────────────────
 builder.Services.AddScoped<ITokenService,    TokenService>();
 builder.Services.AddScoped<ICustomIdService, CustomIdService>();
 builder.Services.AddScoped<ISearchService,   SearchService>();
@@ -102,41 +107,56 @@ builder.Services.AddCors(opt =>
 
 var app = builder.Build();
 
-// ── STEP 1: Migrations with retry ────────────────────────────────────────────
+// ── STEP 1: WAIT FOR DB & APPLY MIGRATIONS ───────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
     var logger  = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    var db      = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var retries = 10;
-    while (true)
+
+    while (retries > 0)
     {
         try
         {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            await db.Database.MigrateAsync();
-            logger.LogInformation("Migrations applied.");
-            break;
+            if (await db.Database.CanConnectAsync())
+            {
+                await db.Database.MigrateAsync();
+                logger.LogInformation("Database connected and migrations applied.");
+                break;
+            }
         }
         catch (Exception ex)
         {
             retries--;
             logger.LogWarning("DB not ready, retrying in 3s ({N} left). Error: {Msg}", retries, ex.Message);
-            if (retries <= 0) throw;
             await Task.Delay(3000);
         }
     }
-}
 
-// ── STEP 2: Seed roles (AFTER tables exist) ───────────────────────────────────
-using (var scope = app.Services.CreateScope())
-{
-    var logger      = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    if (retries == 0) throw new Exception("Database unavailable after multiple retries.");
+
+    // ── STEP 2: SEED ROLES ───────────────────────────────────────────────
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    foreach (var role in new[] { "Admin", "User" })
-        if (!await roleManager.RoleExistsAsync(role))
-            await roleManager.CreateAsync(new IdentityRole(role));
-    logger.LogInformation("Roles seeded. Database ready.");
+
+    // Проверяем, есть ли таблица AspNetRoles
+    var hasRolesTable = await db.Database.ExecuteSqlRawAsync(
+        "SELECT 1 FROM information_schema.tables WHERE table_name='AspNetRoles';"
+    ) > 0;
+
+    if (hasRolesTable)
+    {
+        foreach (var role in new[] { "Admin", "User" })
+            if (!await roleManager.RoleExistsAsync(role))
+                await roleManager.CreateAsync(new IdentityRole(role));
+        logger.LogInformation("Roles seeded successfully.");
+    }
+    else
+    {
+        logger.LogError("Table AspNetRoles does not exist. Roles not seeded.");
+    }
 }
 
+// ── MIDDLEWARE ─────────────────────────────────────────────────────────
 app.UseSwagger();
 app.UseSwaggerUI();
 

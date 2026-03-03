@@ -1,0 +1,60 @@
+# render.yaml — Deploy both services to Render.com
+# Push this repo to GitHub, connect on Render → "New Blueprint"
+
+services:
+  # ── Backend API (Docker) ────────────────────────────────────────────────────
+  - type: web
+    name: collectify-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_URLS
+        value: http://+:8080
+      - key: ConnectionStrings__DefaultConnection
+        fromDatabase:
+          name: collectify-db
+          property: connectionString
+      - key: Jwt__Secret
+        generateValue: true
+      - key: Jwt__Issuer
+        value: InventoryApp
+      - key: Jwt__Audience
+        value: InventoryApp
+      # Set these manually in Render dashboard → Environment
+      - key: Auth__Google__ClientId
+        sync: false
+      - key: Auth__Google__ClientSecret
+        sync: false
+      - key: Auth__Facebook__AppId
+        sync: false
+      - key: Auth__Facebook__AppSecret
+        sync: false
+      - key: Cloudinary__CloudName
+        sync: false
+      - key: Cloudinary__ApiKey
+        sync: false
+      - key: Cloudinary__ApiSecret
+        sync: false
+      - key: Frontend__Url
+        sync: false   # Set to your frontend URL e.g. https://collectify-app.onrender.com
+
+  # ── Frontend (Docker + nginx) ───────────────────────────────────────────────
+  - type: web
+    name: collectify-app
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      - key: VITE_API_URL
+        sync: false   # Set to your backend URL e.g. https://collectify-api.onrender.com
+
+databases:
+  - name: collectify-db
+    databaseName: inventoryapp
+    plan: free

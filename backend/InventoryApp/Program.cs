@@ -17,12 +17,16 @@ static string GetConnectionString(IConfiguration config)
     var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
     if (!string.IsNullOrEmpty(databaseUrl))
     {
+        // Render gives: postgresql://user:pass@host/db  (no port)
+        //            or postgresql://user:pass@host:5432/db
         var uri = new Uri(databaseUrl);
         var userInfo = uri.UserInfo.Split(':');
-        var user = userInfo[0];
-        var pass = userInfo.Length > 1 ? userInfo[1] : "";
+        var user = Uri.UnescapeDataString(userInfo[0]);
+        var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+        var host = uri.Host;
+        var port = uri.Port > 0 ? uri.Port : 5432;   // default 5432 if not in URL
         var db   = uri.AbsolutePath.TrimStart('/');
-        return $"Host={uri.Host};Port={uri.Port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
+        return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
     }
     return config.GetConnectionString("DefaultConnection")!;
 }

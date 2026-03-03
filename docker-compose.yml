@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: inventoryapp
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_PASSWORD: devpassword
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -21,15 +21,15 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile   # Root Dockerfile — builds React + .NET together
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__DefaultConnection: >
-        Host=db;Port=5432;Database=inventoryapp;Username=postgres;Password=${POSTGRES_PASSWORD:-devpassword}
-      Jwt__Secret: ${JWT_SECRET:-dev-secret-key-at-least-32-chars-long-here}
+      # Use same DATABASE_URL format as Render
+      DATABASE_URL: postgres://postgres:devpassword@db:5432/inventoryapp
+      Jwt__Secret: dev-secret-key-at-least-32-characters-long-here
       Jwt__Issuer: InventoryApp
       Jwt__Audience: InventoryApp
       Auth__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
@@ -39,7 +39,6 @@ services:
       Cloudinary__CloudName: ${CLOUDINARY_CLOUD_NAME:-}
       Cloudinary__ApiKey: ${CLOUDINARY_API_KEY:-}
       Cloudinary__ApiSecret: ${CLOUDINARY_API_SECRET:-}
-      Frontend__Url: http://localhost:8080
     depends_on:
       db:
         condition: service_healthy

@@ -1,11 +1,10 @@
-# render.yaml — ONE service, ONE Dockerfile, ONE URL
-# Push to GitHub → Render → New Blueprint → done
+# render.yaml — ONE service, ONE Dockerfile
+# Push to GitHub → Render → New → Blueprint
 
 services:
   - type: web
     name: collectify
     runtime: docker
-    # Dockerfile is in the ROOT of the repo
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
@@ -15,17 +14,22 @@ services:
         value: Production
       - key: ASPNETCORE_URLS
         value: http://+:8080
-      - key: ConnectionStrings__DefaultConnection
+
+      # Render auto-sets DATABASE_URL when you link a database.
+      # Our Program.cs parses postgres://... format automatically.
+      - key: DATABASE_URL
         fromDatabase:
           name: collectify-db
           property: connectionString
+
       - key: Jwt__Secret
         generateValue: true
       - key: Jwt__Issuer
         value: InventoryApp
       - key: Jwt__Audience
         value: InventoryApp
-      # Fill these in Render dashboard manually:
+
+      # Set these manually in Render → Environment tab:
       - key: Auth__Google__ClientId
         sync: false
       - key: Auth__Google__ClientSecret
@@ -39,9 +43,6 @@ services:
       - key: Cloudinary__ApiKey
         sync: false
       - key: Cloudinary__ApiSecret
-        sync: false
-      # Frontend runs on same URL as backend, so CORS is same-origin
-      - key: Frontend__Url
         sync: false
 
 databases:

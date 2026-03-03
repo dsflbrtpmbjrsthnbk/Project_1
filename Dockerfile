@@ -6,7 +6,7 @@ WORKDIR /app/frontend
 
 # Install deps first (cached layer)
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm install
 
 # Build — VITE_API_URL is empty because the frontend
 # will call /api/* which ASP.NET serves from the same origin

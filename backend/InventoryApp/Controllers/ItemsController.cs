@@ -190,7 +190,7 @@ public class ItemsController : ControllerBase
         _db.Comments.Add(comment);
         await _db.SaveChangesAsync();
 
-        var author = await await _db.Users.FindAsync(UserId);
+        var author = await _db.Users.FindAsync(UserId);
         return Ok(new CommentDto(comment.Id, comment.Text, comment.CreatedAt, comment.AuthorId,
             author?.DisplayName ?? "Unknown", author?.AvatarUrl));
     }

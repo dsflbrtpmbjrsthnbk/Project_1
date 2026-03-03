@@ -86,7 +86,7 @@ public class AuthController : ControllerBase
     // GET /api/auth/users/search?q=
     [Authorize]
     [HttpGet("users/search")]
-    public async Task<IActionResult> SearchUsers([FromQuery] string q)
+    public IActionResult SearchUsers([FromQuery] string q)
     {
         if (string.IsNullOrWhiteSpace(q)) return Ok(Array.Empty<object>());
         var users = _userManager.Users

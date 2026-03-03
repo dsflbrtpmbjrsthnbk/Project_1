@@ -150,9 +150,3 @@ export default function ItemsTable({ inventory, canWrite, canEdit }) {
     </div>
   );
 }
-
-// Lazy import to avoid circular
-// removed inline loader
-  
-  ;
-}

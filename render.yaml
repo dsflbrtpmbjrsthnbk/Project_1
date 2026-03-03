@@ -1,13 +1,13 @@
-# render.yaml — Deploy both services to Render.com
-# Push this repo to GitHub, connect on Render → "New Blueprint"
+# render.yaml — ONE service, ONE Dockerfile, ONE URL
+# Push to GitHub → Render → New Blueprint → done
 
 services:
-  # ── Backend API (Docker) ────────────────────────────────────────────────────
   - type: web
-    name: collectify-api
+    name: collectify
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    # Dockerfile is in the ROOT of the repo
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: free
     healthCheckPath: /api/health
     envVars:
@@ -25,7 +25,7 @@ services:
         value: InventoryApp
       - key: Jwt__Audience
         value: InventoryApp
-      # Set these manually in Render dashboard → Environment
+      # Fill these in Render dashboard manually:
       - key: Auth__Google__ClientId
         sync: false
       - key: Auth__Google__ClientSecret
@@ -40,19 +40,9 @@ services:
         sync: false
       - key: Cloudinary__ApiSecret
         sync: false
+      # Frontend runs on same URL as backend, so CORS is same-origin
       - key: Frontend__Url
-        sync: false   # Set to your frontend URL e.g. https://collectify-app.onrender.com
-
-  # ── Frontend (Docker + nginx) ───────────────────────────────────────────────
-  - type: web
-    name: collectify-app
-    runtime: docker
-    dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
-    plan: free
-    envVars:
-      - key: VITE_API_URL
-        sync: false   # Set to your backend URL e.g. https://collectify-api.onrender.com
+        sync: false
 
 databases:
   - name: collectify-db

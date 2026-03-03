@@ -1,21 +1,15 @@
 import axios from 'axios';
 
-// In production the frontend is served from its own domain,
-// so we need to point /api calls at the real backend URL.
-const BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : '/api';
+// Single-container: frontend and backend run on the same origin.
+// All /api/* requests go to ASP.NET Core directly.
+const api = axios.create({ baseURL: '/api' });
 
-const api = axios.create({ baseURL: BASE_URL });
-
-// Attach JWT token automatically
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Handle 401 globally
 api.interceptors.response.use(
   res => res,
   err => {
@@ -27,20 +21,13 @@ api.interceptors.response.use(
   }
 );
 
-const apiUrl = (path) =>
-  import.meta.env.VITE_API_URL
-    ? `${import.meta.env.VITE_API_URL}${path}`
-    : path;
-
-// Auth
 export const authApi = {
   me: () => api.get('/auth/me').then(r => r.data),
   searchUsers: (q) => api.get('/auth/users/search', { params: { q } }).then(r => r.data),
   loginUrl: (provider) =>
-    `${apiUrl('/api/auth/login')}/${provider}?returnUrl=${window.location.origin}/auth-callback`,
+    `/api/auth/login/${provider}?returnUrl=${window.location.origin}/auth-callback`,
 };
 
-// Inventories
 export const inventoriesApi = {
   list: (params) => api.get('/inventories', { params }).then(r => r.data),
   get: (id) => api.get(`/inventories/${id}`).then(r => r.data),
@@ -60,7 +47,6 @@ export const inventoriesApi = {
   },
 };
 
-// Items
 export const itemsApi = {
   list: (inventoryId, params) => api.get(`/inventories/${inventoryId}/items`, { params }).then(r => r.data),
   get: (inventoryId, id) => api.get(`/inventories/${inventoryId}/items/${id}`).then(r => r.data),
@@ -68,22 +54,21 @@ export const itemsApi = {
   update: (inventoryId, id, data) => api.put(`/inventories/${inventoryId}/items/${id}`, data).then(r => r.data),
   delete: (inventoryId, id) => api.delete(`/inventories/${inventoryId}/items/${id}`),
   toggleLike: (inventoryId, id) => api.post(`/inventories/${inventoryId}/items/${id}/like`).then(r => r.data),
-  addComment: (inventoryId, id, data) => api.post(`/inventories/${inventoryId}/items/${id}/comments`, data).then(r => r.data),
-  deleteComment: (inventoryId, itemId, commentId) => api.delete(`/inventories/${inventoryId}/items/${itemId}/comments/${commentId}`),
+  addComment: (inventoryId, id, data) =>
+    api.post(`/inventories/${inventoryId}/items/${id}/comments`, data).then(r => r.data),
+  deleteComment: (inventoryId, itemId, commentId) =>
+    api.delete(`/inventories/${inventoryId}/items/${itemId}/comments/${commentId}`),
 };
 
-// Search
 export const searchApi = {
   search: (q) => api.get('/search', { params: { q } }).then(r => r.data),
 };
 
-// Tags
 export const tagsApi = {
   cloud: () => api.get('/tags/cloud').then(r => r.data),
   autocomplete: (q) => api.get('/tags/autocomplete', { params: { q } }).then(r => r.data),
 };
 
-// Admin
 export const adminApi = {
   users: (params) => api.get('/admin/users', { params }).then(r => r.data),
   block: (id) => api.post(`/admin/users/${id}/block`),

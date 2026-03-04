@@ -436,10 +436,6 @@ namespace InventoryApp.Data.Migrations
 
                     b.HasIndex("InventoryId");
 
-                    b.HasIndex("SearchVector");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("SearchVector"), "GIN");
-
                     b.ToTable("Items");
                 });
 

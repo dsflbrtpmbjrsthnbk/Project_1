@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace InventoryApp.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260304130335_Initial")]
+    [Migration("20260304130941_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -438,10 +438,6 @@ namespace InventoryApp.Data.Migrations
                     b.HasIndex("CustomId");
 
                     b.HasIndex("InventoryId");
-
-                    b.HasIndex("SearchVector");
-
-                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("SearchVector"), "GIN");
 
                     b.ToTable("Items");
                 });

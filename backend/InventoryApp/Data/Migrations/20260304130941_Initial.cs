@@ -444,12 +444,6 @@ namespace InventoryApp.Data.Migrations
                 column: "InventoryId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Items_SearchVector",
-                table: "Items",
-                column: "SearchVector")
-                .Annotation("Npgsql:IndexMethod", "GIN");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Likes_ItemId",
                 table: "Likes",
                 column: "ItemId");

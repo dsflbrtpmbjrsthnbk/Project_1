@@ -38,8 +38,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
             e.Property(i => i.RowVersion).IsRowVersion();
             e.HasIndex(i => i.InventoryId);
             e.HasIndex(i => i.CustomId);
-            // PostgreSQL full-text search index
-            e.HasIndex(i => i.SearchVector).HasMethod("GIN");
         });
 
         builder.Entity<InventoryAccess>(e =>

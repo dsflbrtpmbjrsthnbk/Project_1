@@ -22,7 +22,7 @@ static string GetConnectionString(IConfiguration config)
         var host     = uri.Host;
         var port     = uri.Port > 0 ? uri.Port : 5432;
         var db       = uri.AbsolutePath.TrimStart('/');
-        return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Require;Trust Server Certificate=true";
+        return $"Host={host};Port={port};Database={db};Username={user};Password={pass};SSL Mode=Prefer;Trust Server Certificate=true";
     }
     return config.GetConnectionString("DefaultConnection")!;
 }
@@ -46,7 +46,7 @@ builder.Services.AddIdentity<AppUser, IdentityRole>(opt =>
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("Jwt:Secret is required");
 
-builder.Services.AddAuthentication(opt =>
+var authBuilder = builder.Services.AddAuthentication(opt =>
 {
     opt.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     opt.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
@@ -73,24 +73,34 @@ builder.Services.AddAuthentication(opt =>
         }
     };
 })
-.AddCookie("Cookies")
-.AddGoogle(opt =>
+.AddCookie("Cookies");
+
+var googleId = builder.Configuration["Auth:Google:ClientId"];
+if (!string.IsNullOrEmpty(googleId))
 {
-    opt.SignInScheme = "Cookies";
-    opt.ClientId     = builder.Configuration["Auth:Google:ClientId"]     ?? "";
-    opt.ClientSecret = builder.Configuration["Auth:Google:ClientSecret"] ?? "";
-    opt.Scope.Add("profile");
-    opt.Scope.Add("email");
-    opt.SaveTokens = true;
-})
-.AddFacebook(opt =>
+    authBuilder.AddGoogle(opt =>
+    {
+        opt.SignInScheme = "Cookies";
+        opt.ClientId     = googleId;
+        opt.ClientSecret = builder.Configuration["Auth:Google:ClientSecret"] ?? "";
+        opt.Scope.Add("profile");
+        opt.Scope.Add("email");
+        opt.SaveTokens = true;
+    });
+}
+
+var fbId = builder.Configuration["Auth:Facebook:AppId"];
+if (!string.IsNullOrEmpty(fbId))
 {
-    opt.SignInScheme = "Cookies";
-    opt.AppId        = builder.Configuration["Auth:Facebook:AppId"]     ?? "";
-    opt.AppSecret    = builder.Configuration["Auth:Facebook:AppSecret"] ?? "";
-    opt.Scope.Add("email");
-    opt.Fields.Add("picture");
-});
+    authBuilder.AddFacebook(opt =>
+    {
+        opt.SignInScheme = "Cookies";
+        opt.AppId        = fbId;
+        opt.AppSecret    = builder.Configuration["Auth:Facebook:AppSecret"] ?? "";
+        opt.Scope.Add("email");
+        opt.Fields.Add("picture");
+    });
+}
 
 // ── CUSTOM SERVICES ─────────────────────────────────────────────────────
 builder.Services.AddScoped<ITokenService,    TokenService>();
@@ -108,52 +118,80 @@ builder.Services.AddCors(opt =>
 var app = builder.Build();
 
 // ── STEP 1: WAIT FOR DB & APPLY MIGRATIONS ───────────────────────────────
-using (var scope = app.Services.CreateScope())
+try
 {
-    var logger  = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    var db      = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    var retries = 10;
-
-    while (retries > 0)
+    using (var scope = app.Services.CreateScope())
     {
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var retries = 10;
+
+        while (retries > 0)
+        {
+            try
+            {
+                if (await db.Database.CanConnectAsync())
+                {
+                    await db.Database.MigrateAsync();
+                    logger.LogInformation("Database connected and migrations applied.");
+                    break;
+                }
+                else
+                {
+                    retries--;
+                    logger.LogWarning("DB connection check failed, retrying in 3s ({N} left).", retries);
+                }
+            }
+            catch (Exception ex)
+            {
+                retries--;
+                logger.LogWarning("DB not ready, retrying in 3s ({N} left). Error: {Msg}", retries, ex.Message);
+            }
+
+            if (retries > 0) await Task.Delay(3000);
+        }
+
+        if (retries == 0)
+        {
+            var msg = "Database unavailable after multiple retries.";
+            logger.LogCritical(msg);
+            throw new Exception(msg);
+        }
+
+        // ── STEP 2: SEED ROLES ───────────────────────────────────────────────
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+
+        // Проверяем, есть ли таблица AspNetRoles (Postgres way)
+        var hasRolesTable = false;
         try
         {
-            if (await db.Database.CanConnectAsync())
-            {
-                await db.Database.MigrateAsync();
-                logger.LogInformation("Database connected and migrations applied.");
-                break;
-            }
+             var result = await db.Database.ExecuteSqlRawAsync(
+                "SELECT 1 FROM information_schema.tables WHERE table_name='AspNetRoles' LIMIT 1;"
+            );
+            hasRolesTable = true; // If it doesn't throw, we assume we can at least query it or it's being created
         }
-        catch (Exception ex)
+        catch { /* Table might not exist yet or other issue */ }
+
+        if (hasRolesTable)
         {
-            retries--;
-            logger.LogWarning("DB not ready, retrying in 3s ({N} left). Error: {Msg}", retries, ex.Message);
-            await Task.Delay(3000);
+            foreach (var role in new[] { "Admin", "User" })
+                if (!await roleManager.RoleExistsAsync(role))
+                    await roleManager.CreateAsync(new IdentityRole(role));
+            logger.LogInformation("Roles seeded successfully.");
+        }
+        else
+        {
+            logger.LogError("Table AspNetRoles does not exist or matches failed. Roles not seeded.");
         }
     }
-
-    if (retries == 0) throw new Exception("Database unavailable after multiple retries.");
-
-    // ── STEP 2: SEED ROLES ───────────────────────────────────────────────
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-
-    // Проверяем, есть ли таблица AspNetRoles
-    var hasRolesTable = await db.Database.ExecuteSqlRawAsync(
-        "SELECT 1 FROM information_schema.tables WHERE table_name='AspNetRoles';"
-    ) > 0;
-
-    if (hasRolesTable)
-    {
-        foreach (var role in new[] { "Admin", "User" })
-            if (!await roleManager.RoleExistsAsync(role))
-                await roleManager.CreateAsync(new IdentityRole(role));
-        logger.LogInformation("Roles seeded successfully.");
-    }
-    else
-    {
-        logger.LogError("Table AspNetRoles does not exist. Roles not seeded.");
-    }
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine("CRITICAL STARTUP ERROR: " + ex.ToString());
+    // We don't rethrow here to allow the app to potentially start and show logs via health check, 
+    // but in many cases a 500 is better than a zombie process. 
+    // However, Render might kill the container if healthcheck fails.
+    throw; 
 }
 
 // ── MIDDLEWARE ─────────────────────────────────────────────────────────

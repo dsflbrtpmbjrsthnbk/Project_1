@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Heart, MessageSquare, Send, Trash2, ArrowLeft, ExternalLink } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { itemsApi, inventoriesApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
@@ -21,7 +20,8 @@ export default function ItemPage() {
 
   const { data: item, isLoading } = useQuery({
     queryKey: ['item', inventoryId, itemId],
-    queryFn: () => itemsApi.get(Number(inventoryId), Number(itemId))
+    queryFn: () => itemsApi.get(Number(inventoryId), Number(itemId)),
+    refetchInterval: 3000
   });
 
   const likeMut = useMutation({
@@ -40,22 +40,22 @@ export default function ItemPage() {
   });
 
   if (isLoading || !inv) return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" /></div>;
-  if (!item) return <div>Not found</div>;
+  if (!item) return <div className="py-20 text-center dark:text-slate-400">Not found</div>;
 
   const fields = inv.fields;
 
   const fieldEntries = [
-    ...([1,2,3].filter(n => fields[`string${n}`]).map(n => ({ label: fields[`string${n}`], value: item[`string${n}`], type: 'string' }))),
-    ...([1,2,3].filter(n => fields[`text${n}`]).map(n => ({ label: fields[`text${n}`], value: item[`text${n}`], type: 'text' }))),
-    ...([1,2,3].filter(n => fields[`number${n}`]).map(n => ({ label: fields[`number${n}`], value: item[`number${n}`], type: 'number' }))),
-    ...([1,2,3].filter(n => fields[`link${n}`]).map(n => ({ label: fields[`link${n}`], value: item[`link${n}`], type: 'link' }))),
-    ...([1,2,3].filter(n => fields[`bool${n}`]).map(n => ({ label: fields[`bool${n}`], value: item[`bool${n}`], type: 'bool' }))),
+    ...([1, 2, 3].filter(n => fields?.[`str${n}`]?.name).map(n => ({ label: fields[`str${n}`].name, value: item[`string${n}`], type: 'string', desc: fields[`str${n}`].desc }))),
+    ...([1, 2, 3].filter(n => fields?.[`txt${n}`]?.name).map(n => ({ label: fields[`txt${n}`].name, value: item[`text${n}`], type: 'text', desc: fields[`txt${n}`].desc }))),
+    ...([1, 2, 3].filter(n => fields?.[`num${n}`]?.name).map(n => ({ label: fields[`num${n}`].name, value: item[`number${n}`], type: 'number', desc: fields[`num${n}`].desc }))),
+    ...([1, 2, 3].filter(n => fields?.[`lnk${n}`]?.name).map(n => ({ label: fields[`lnk${n}`].name, value: item[`link${n}`], type: 'link', desc: fields[`lnk${n}`].desc }))),
+    ...([1, 2, 3].filter(n => fields?.[`bol${n}`]?.name).map(n => ({ label: fields[`bol${n}`].name, value: item[`bool${n}`], type: 'bool', desc: fields[`bol${n}`].desc }))),
   ];
 
   return (
     <div className="max-w-3xl animate-fade-in">
       {/* Breadcrumb */}
-      <Link to={`/inventories/${inventoryId}`} className="flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-4">
+      <Link to={`/inventories/${inventoryId}`} className="flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 dark:hover:text-brand-400 mb-4 transition-colors">
         <ArrowLeft size={14} /> {inv?.title}
       </Link>
 
@@ -64,42 +64,45 @@ export default function ItemPage() {
         <div className="flex items-start justify-between mb-4">
           <div>
             <span className="custom-id text-base">{item.customId}</span>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
               Created {format(new Date(item.createdAt), 'PPP')} · Updated {format(new Date(item.updatedAt), 'PPP')}
             </p>
           </div>
           <button onClick={() => likeMut.mutate()}
             disabled={!isAuthenticated}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all
-              ${item.userLiked ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-500'}`}>
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-slate-900 focus:ring-red-400
+              ${item.userLiked ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-500 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-red-900/20 dark:hover:text-red-400'}`}>
             <Heart size={16} className={item.userLiked ? 'fill-current' : ''} />
             {item.likeCount}
           </button>
         </div>
 
         {/* Fields */}
-        <div className="divide-y divide-slate-100">
-          {fieldEntries.map(({ label, value, type }) => (
-            <div key={label} className="py-3 flex items-start gap-4">
-              <span className="text-sm font-medium text-slate-500 w-40 shrink-0">{label}</span>
-              <div className="flex-1">
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          {fieldEntries.map(({ label, value, type, desc }) => (
+            <div key={label} className="py-3 flex items-start gap-4 flex-col sm:flex-row">
+              <div className="w-48 shrink-0">
+                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</span>
+                {desc && <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 max-w-[90%] leading-tight">{desc}</p>}
+              </div>
+              <div className="flex-1 w-full min-w-0">
                 {value === null || value === undefined ? (
-                  <span className="text-slate-300 text-sm">—</span>
+                  <span className="text-slate-300 dark:text-slate-700 text-sm">—</span>
                 ) : type === 'bool' ? (
                   <span className={`badge ${value ? 'badge-green' : 'badge-gray'}`}>{value ? 'Yes' : 'No'}</span>
                 ) : type === 'link' ? (
                   <a href={value} target="_blank" rel="noreferrer"
-                    className="text-brand-600 hover:underline text-sm flex items-center gap-1">
-                    {value} <ExternalLink size={12} />
+                    className="text-brand-600 dark:text-brand-400 hover:underline text-sm flex items-center gap-1 truncate w-fit max-w-full">
+                    <span className="truncate">{value}</span> <ExternalLink size={12} className="shrink-0" />
                   </a>
                 ) : type === 'text' ? (
-                  <div className="text-sm text-slate-700 prose prose-sm max-w-none">
+                  <div className="text-sm text-slate-700 dark:text-slate-300 prose prose-sm prose-slate dark:prose-invert max-w-none break-words">
                     <ReactMarkdown>{value}</ReactMarkdown>
                   </div>
                 ) : type === 'number' ? (
-                  <span className="font-mono text-slate-800">{value}</span>
+                  <span className="font-mono text-slate-800 dark:text-slate-200">{value}</span>
                 ) : (
-                  <span className="text-sm text-slate-800">{value}</span>
+                  <span className="text-sm text-slate-800 dark:text-slate-200 break-words">{value}</span>
                 )}
               </div>
             </div>
@@ -109,7 +112,7 @@ export default function ItemPage() {
 
       {/* Discussion */}
       <div className="card p-6">
-        <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2">
+        <h2 className="font-display font-bold text-lg mb-4 flex items-center gap-2 dark:text-white">
           <MessageSquare size={18} /> Discussion ({item.comments?.length ?? 0})
         </h2>
 
@@ -120,16 +123,16 @@ export default function ItemPage() {
                 className="w-8 h-8 rounded-full shrink-0" alt={c.authorName} />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-medium">{c.authorName}</span>
+                  <span className="text-sm font-medium dark:text-slate-200">{c.authorName}</span>
                   <span className="text-xs text-slate-400">{format(new Date(c.createdAt), 'MMM d, HH:mm')}</span>
                   {(isAdmin || user?.id === c.authorId) && (
                     <button onClick={() => deleteCommentMut.mutate(c.id)}
-                      className="ml-auto btn-icon text-red-400 hover:text-red-600">
+                      className="ml-auto btn-icon text-red-400 hover:text-red-600 dark:hover:text-red-400">
                       <Trash2 size={12} />
                     </button>
                   )}
                 </div>
-                <p className="text-sm text-slate-700 break-words">{c.text}</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 break-words">{c.text}</p>
               </div>
             </div>
           ))}

@@ -40,6 +40,9 @@ export const inventoriesApi = {
   stats: (id) => api.get(`/inventories/${id}/stats`).then(r => r.data),
   exportCsv: (id) => api.get(`/inventories/${id}/export`, { responseType: 'blob' }),
   userInventories: (userId) => api.get(`/inventories/user/${userId}`).then(r => r.data),
+  getComments: (id) => api.get(`/inventories/${id}/comments`).then(r => r.data),
+  addComment: (id, data) => api.post(`/inventories/${id}/comments`, data).then(r => r.data),
+  deleteComment: (id, commentId) => api.delete(`/inventories/${id}/comments/${commentId}`),
   uploadImage: (file) => {
     const form = new FormData();
     form.append('file', file);

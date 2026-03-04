@@ -37,15 +37,34 @@ public class ItemsController : ControllerBase
 
     // GET /api/inventories/{inventoryId}/items
     [HttpGet]
-    public async Task<IActionResult> GetAll(int inventoryId, [FromQuery] int page = 1, [FromQuery] int pageSize = 25)
+    public async Task<IActionResult> GetAll(int inventoryId, [FromQuery] int page = 1, [FromQuery] int pageSize = 25,
+        [FromQuery] string? sort = null, [FromQuery] string? q = null)
     {
         var inv = await _db.Inventories.FindAsync(inventoryId);
         if (inv == null) return NotFound();
 
-        var query = _db.Items.Where(i => i.InventoryId == inventoryId).OrderByDescending(i => i.CreatedAt);
+        var query = _db.Items.Where(i => i.InventoryId == inventoryId);
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var lower = q.ToLower();
+            query = query.Where(i =>
+                EF.Functions.ILike(i.CustomId, $"%{lower}%") ||
+                EF.Functions.ILike(i.StringValue1 ?? "", $"%{lower}%") ||
+                EF.Functions.ILike(i.StringValue2 ?? "", $"%{lower}%") ||
+                EF.Functions.ILike(i.StringValue3 ?? "", $"%{lower}%"));
+        }
+
+        query = sort switch
+        {
+            "customId" => query.OrderBy(i => i.CustomId),
+            "oldest" => query.OrderBy(i => i.CreatedAt),
+            _ => query.OrderByDescending(i => i.CreatedAt)
+        };
+
         var total = await query.CountAsync();
         var items = await query.Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(i => new ItemListDto(i.Id, i.CustomId, i.CreatedAt, i.UpdatedAt,
+            .Select(i => new ItemListDto(i.Id, i.CustomId, i.CreatedById, i.CreatedAt, i.UpdatedAt,
                 i.StringValue1, i.StringValue2, i.StringValue3,
                 i.TextValue1, i.TextValue2, i.TextValue3,
                 i.NumberValue1, i.NumberValue2, i.NumberValue3,
@@ -68,7 +87,7 @@ public class ItemsController : ControllerBase
         if (item == null) return NotFound();
 
         var uid = UserId;
-        return Ok(new ItemDetailDto(item.Id, item.CustomId, item.InventoryId, item.CreatedAt, item.UpdatedAt,
+        return Ok(new ItemDetailDto(item.Id, item.CustomId, item.InventoryId, item.CreatedById, item.CreatedAt, item.UpdatedAt,
             item.StringValue1, item.StringValue2, item.StringValue3,
             item.TextValue1, item.TextValue2, item.TextValue3,
             item.NumberValue1, item.NumberValue2, item.NumberValue3,
@@ -90,12 +109,28 @@ public class ItemsController : ControllerBase
         if (inv == null) return NotFound();
         if (!canWrite) return Forbid();
 
-        var customId = await _customIdService.GenerateAsync(inventoryId, inv.CustomIdFormat);
+        // Support optional custom ID override; generate if not provided
+        string customId;
+        if (!string.IsNullOrWhiteSpace(dto.CustomId))
+        {
+            // Validate uniqueness
+            if (await _db.Items.AnyAsync(i => i.InventoryId == inventoryId && i.CustomId == dto.CustomId))
+                return Conflict(new { message = $"Custom ID '{dto.CustomId}' already exists in this inventory." });
+            customId = dto.CustomId;
+        }
+        else
+        {
+            customId = await _customIdService.GenerateAsync(inventoryId, inv.CustomIdFormat);
+            // Retry once on collision
+            if (await _db.Items.AnyAsync(i => i.InventoryId == inventoryId && i.CustomId == customId))
+                customId = await _customIdService.GenerateAsync(inventoryId, inv.CustomIdFormat);
+        }
 
         var item = new Item
         {
             InventoryId = inventoryId,
             CustomId = customId,
+            CreatedById = UserId!,
             StringValue1 = dto.String1, StringValue2 = dto.String2, StringValue3 = dto.String3,
             TextValue1 = dto.Text1, TextValue2 = dto.Text2, TextValue3 = dto.Text3,
             NumberValue1 = dto.Number1, NumberValue2 = dto.Number2, NumberValue3 = dto.Number3,
@@ -104,7 +139,14 @@ public class ItemsController : ControllerBase
         };
         UpdateSearchVector(item, inv);
         _db.Items.Add(item);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { message = $"Custom ID '{customId}' already exists. Please edit the ID and try again." });
+        }
         return CreatedAtAction(nameof(Get), new { inventoryId, id = item.Id }, new { item.Id, item.CustomId });
     }
 
@@ -123,7 +165,15 @@ public class ItemsController : ControllerBase
         // Optimistic locking check
         var incoming = Convert.FromBase64String(dto.RowVersion);
         if (!item.RowVersion.SequenceEqual(incoming))
-            return Conflict("Item was modified by another user. Please refresh and try again.");
+            return Conflict(new { message = "Item was modified by another user. Please refresh and try again." });
+
+        // Custom ID update with uniqueness check
+        if (!string.IsNullOrWhiteSpace(dto.CustomId) && dto.CustomId != item.CustomId)
+        {
+            if (await _db.Items.AnyAsync(i => i.InventoryId == inventoryId && i.CustomId == dto.CustomId && i.Id != id))
+                return Conflict(new { message = $"Custom ID '{dto.CustomId}' already exists in this inventory." });
+            item.CustomId = dto.CustomId;
+        }
 
         item.StringValue1 = dto.String1; item.StringValue2 = dto.String2; item.StringValue3 = dto.String3;
         item.TextValue1 = dto.Text1; item.TextValue2 = dto.Text2; item.TextValue3 = dto.Text3;
@@ -132,12 +182,12 @@ public class ItemsController : ControllerBase
         item.BoolValue1 = dto.Bool1; item.BoolValue2 = dto.Bool2; item.BoolValue3 = dto.Bool3;
         item.UpdatedAt = DateTime.UtcNow;
 
-        UpdateSearchVector(item, inv);
+        UpdateSearchVector(item, inv!);
 
         try { await _db.SaveChangesAsync(); }
         catch (DbUpdateConcurrencyException)
         {
-            return Conflict("Concurrency conflict detected.");
+            return Conflict(new { message = "Concurrency conflict detected." });
         }
         return Ok(new { item.Id, RowVersion = Convert.ToBase64String(item.RowVersion) });
     }
@@ -147,9 +197,9 @@ public class ItemsController : ControllerBase
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int inventoryId, int id)
     {
-        var (_, canEdit, inv) = await CheckAccessAsync(inventoryId);
+        var (canWrite, _, inv) = await CheckAccessAsync(inventoryId);
         if (inv == null) return NotFound();
-        if (!canEdit) return Forbid();
+        if (!canWrite) return Forbid();
 
         var item = await _db.Items.FirstOrDefaultAsync(i => i.Id == id && i.InventoryId == inventoryId);
         if (item == null) return NotFound();
@@ -189,10 +239,9 @@ public class ItemsController : ControllerBase
         var comment = new Comment { Text = dto.Text, ItemId = id, AuthorId = UserId! };
         _db.Comments.Add(comment);
         await _db.SaveChangesAsync();
-
-        var author = await _db.Users.FindAsync(UserId);
+        await _db.Entry(comment).Reference(c => c.Author).LoadAsync();
         return Ok(new CommentDto(comment.Id, comment.Text, comment.CreatedAt, comment.AuthorId,
-            author?.DisplayName ?? "Unknown", author?.AvatarUrl));
+            comment.Author.DisplayName, comment.Author.AvatarUrl));
     }
 
     // DELETE /api/inventories/{inventoryId}/items/{itemId}/comments/{commentId}

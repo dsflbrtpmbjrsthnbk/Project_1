@@ -21,8 +21,6 @@ public class SearchService : ISearchService
         var results = new List<SearchResultDto>();
         var lower = query.ToLower();
 
-        // Search inventories using PostgreSQL ILIKE (simple but indexed via trigram if extension available)
-        // Using EF.Functions.ILike for PostgreSQL
         var inventories = await _db.Inventories
             .Include(i => i.Owner)
             .Where(i =>
@@ -30,12 +28,11 @@ public class SearchService : ISearchService
                 EF.Functions.ILike(i.Description, $"%{lower}%") ||
                 EF.Functions.ILike(i.Tags, $"%{lower}%"))
             .Take(10)
-            .Select(i => new SearchResultDto("inventory", i.Id, i.Title, i.Description, null))
+            .Select(i => new SearchResultDto("inventory", i.Id, i.Title, i.Description, null, null))
             .ToListAsync();
 
         results.AddRange(inventories);
 
-        // Search items using full-text search vector or ILIKE fallback
         var items = await _db.Items
             .Include(i => i.Inventory)
             .Where(i =>
@@ -49,7 +46,7 @@ public class SearchService : ISearchService
             .Take(10)
             .Select(i => new SearchResultDto("item", i.Id, i.CustomId,
                 i.StringValue1 ?? i.StringValue2 ?? i.TextValue1,
-                i.Inventory.Title))
+                i.Inventory.Title, i.InventoryId))
             .ToListAsync();
 
         results.AddRange(items);

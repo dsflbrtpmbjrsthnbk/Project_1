@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Save } from 'lucide-react';
+import { Save, Info } from 'lucide-react';
 import { itemsApi } from '../../services/api';
 
 export default function ItemForm({ inventoryId, inv, item, onSuccess, onCancel }) {
@@ -47,45 +47,59 @@ export default function ItemForm({ inventoryId, inv, item, onSuccess, onCancel }
     }
   };
 
+  const renderLabel = (fieldDef) => (
+    <div className="flex items-center gap-1.5 label mb-1">
+      {fieldDef.name}
+      {fieldDef.desc && (
+        <div className="group relative flex items-center">
+          <Info size={14} className="text-slate-400 hover:text-brand-500 cursor-help transition-colors" />
+          <div className="absolute left-full ml-2 w-48 p-2 bg-slate-800 text-xs text-white rounded-lg opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all pointer-events-none z-10 before:content-[''] before:absolute before:right-full before:top-1/2 before:-translate-y-1/2 before:border-4 before:border-transparent before:border-r-slate-800">
+            {fieldDef.desc}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* String fields */}
-      {[1, 2, 3].map(n => fields[`string${n}`] && (
+      {[1, 2, 3].map(n => fields[`str${n}`]?.name && (
         <div key={`s${n}`}>
-          <label className="label">{fields[`string${n}`]}</label>
+          {renderLabel(fields[`str${n}`])}
           <input {...register(`String${n}`)} className="input" />
         </div>
       ))}
 
       {/* Text fields */}
-      {[1, 2, 3].map(n => fields[`text${n}`] && (
+      {[1, 2, 3].map(n => fields[`txt${n}`]?.name && (
         <div key={`t${n}`}>
-          <label className="label">{fields[`text${n}`]}</label>
+          {renderLabel(fields[`txt${n}`])}
           <textarea {...register(`Text${n}`)} rows={3} className="input" />
         </div>
       ))}
 
       {/* Number fields */}
-      {[1, 2, 3].map(n => fields[`number${n}`] && (
+      {[1, 2, 3].map(n => fields[`num${n}`]?.name && (
         <div key={`n${n}`}>
-          <label className="label">{fields[`number${n}`]}</label>
+          {renderLabel(fields[`num${n}`])}
           <input type="number" step="any" {...register(`Number${n}`)} className="input" />
         </div>
       ))}
 
       {/* Link fields */}
-      {[1, 2, 3].map(n => fields[`link${n}`] && (
+      {[1, 2, 3].map(n => fields[`lnk${n}`]?.name && (
         <div key={`l${n}`}>
-          <label className="label">{fields[`link${n}`]}</label>
+          {renderLabel(fields[`lnk${n}`])}
           <input type="url" {...register(`Link${n}`)} className="input" placeholder="https://" />
         </div>
       ))}
 
       {/* Bool fields */}
-      {[1, 2, 3].map(n => fields[`bool${n}`] && (
+      {[1, 2, 3].map(n => fields[`bol${n}`]?.name && (
         <div key={`b${n}`} className="flex items-center gap-2">
           <input type="checkbox" id={`Bool${n}`} {...register(`Bool${n}`)} className="w-4 h-4 accent-brand-600" />
-          <label htmlFor={`Bool${n}`} className="text-sm font-medium text-slate-700">{fields[`bool${n}`]}</label>
+          {renderLabel(fields[`bol${n}`])}
         </div>
       ))}
 

@@ -28,25 +28,62 @@ public class Inventory
     public string OwnerId { get; set; } = "";
     public AppUser Owner { get; set; } = null!;
 
+    // Optimistic locking version for auto-save
+    public int Version { get; set; } = 0;
+
     // Custom ID format config (JSON string)
     public string CustomIdFormat { get; set; } = "[]";
 
-    // Custom field definitions (up to 3 of each type)
+    // Custom field definitions (up to 3 of each type) + description + showInTable
     public string? StringField1Name { get; set; }
+    public string? StringField1Desc { get; set; }
+    public bool StringField1Show { get; set; } = true;
     public string? StringField2Name { get; set; }
+    public string? StringField2Desc { get; set; }
+    public bool StringField2Show { get; set; } = true;
     public string? StringField3Name { get; set; }
+    public string? StringField3Desc { get; set; }
+    public bool StringField3Show { get; set; } = true;
+
     public string? TextField1Name { get; set; }
+    public string? TextField1Desc { get; set; }
+    public bool TextField1Show { get; set; } = true;
     public string? TextField2Name { get; set; }
+    public string? TextField2Desc { get; set; }
+    public bool TextField2Show { get; set; } = true;
     public string? TextField3Name { get; set; }
+    public string? TextField3Desc { get; set; }
+    public bool TextField3Show { get; set; } = true;
+
     public string? NumberField1Name { get; set; }
+    public string? NumberField1Desc { get; set; }
+    public bool NumberField1Show { get; set; } = true;
     public string? NumberField2Name { get; set; }
+    public string? NumberField2Desc { get; set; }
+    public bool NumberField2Show { get; set; } = true;
     public string? NumberField3Name { get; set; }
+    public string? NumberField3Desc { get; set; }
+    public bool NumberField3Show { get; set; } = true;
+
     public string? LinkField1Name { get; set; }
+    public string? LinkField1Desc { get; set; }
+    public bool LinkField1Show { get; set; } = true;
     public string? LinkField2Name { get; set; }
+    public string? LinkField2Desc { get; set; }
+    public bool LinkField2Show { get; set; } = true;
     public string? LinkField3Name { get; set; }
+    public string? LinkField3Desc { get; set; }
+    public bool LinkField3Show { get; set; } = true;
+
     public string? BoolField1Name { get; set; }
+    public string? BoolField1Desc { get; set; }
+    public bool BoolField1Show { get; set; } = true;
     public string? BoolField2Name { get; set; }
+    public string? BoolField2Desc { get; set; }
+    public bool BoolField2Show { get; set; } = true;
     public string? BoolField3Name { get; set; }
+    public string? BoolField3Desc { get; set; }
+    public bool BoolField3Show { get; set; } = true;
 
     public ICollection<Item> Items { get; set; } = [];
     public ICollection<InventoryAccess> Accesses { get; set; } = [];
@@ -68,6 +105,7 @@ public class Item
     public string CustomId { get; set; } = "";
     public int InventoryId { get; set; }
     public Inventory Inventory { get; set; } = null!;
+    public string CreatedById { get; set; } = "";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

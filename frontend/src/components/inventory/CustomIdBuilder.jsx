@@ -1,5 +1,9 @@
 import { useState } from 'react';
-import { Plus, Trash2, GripVertical, Smile } from 'lucide-react';
+import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useTranslation } from 'react-i18next';
 
 const ELEMENT_TYPES = [
   { value: 'fixed', label: 'Fixed', desc: 'Fixed text or emoji', defaultValue: '📦-' },
@@ -39,12 +43,51 @@ function generatePreview(elements) {
   }).join('');
 }
 
+function SortableItem({ id, el, index, updateElement, removeElement }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+      <div {...attributes} {...listeners} className="cursor-grab hover:text-brand-600">
+        <GripVertical size={16} className="text-slate-300 dark:text-slate-500 shrink-0" />
+      </div>
+      <select value={el.type} onChange={e => updateElement(index, { type: e.target.value })}
+        className="input w-36 shrink-0">
+        {ELEMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+      </select>
+      <input value={el.value || ''} onChange={e => updateElement(index, { value: e.target.value })}
+        placeholder={ELEMENT_TYPES.find(t => t.value === el.type)?.desc}
+        className="input flex-1 font-mono" />
+      <button type="button" onClick={() => removeElement(index)} className="btn-icon text-red-400 hover:text-red-600">
+        <Trash2 size={15} />
+      </button>
+    </div>
+  );
+}
+
 export default function CustomIdBuilder({ value, onChange }) {
-  const elements = (() => { try { return JSON.parse(value || '[]'); } catch { return []; } })();
+  const { t } = useTranslation();
+  const [elements, setElements] = useState(() => {
+    try {
+      const parsed = JSON.parse(value || '[]');
+      return parsed.map(p => ({ ...p, id: Math.random().toString(36).substr(2, 9) }));
+    } catch {
+      return [];
+    }
+  });
 
-  const update = (newElements) => onChange(JSON.stringify(newElements));
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
-  const addElement = () => update([...elements, { type: 'fixed', value: '' }]);
+  const update = (newElements) => {
+    setElements(newElements);
+    onChange(JSON.stringify(newElements.map(({ type, value }) => ({ type, value }))));
+  };
+
+  const addElement = () => update([...elements, { id: Math.random().toString(), type: 'fixed', value: '' }]);
 
   const updateElement = (i, changes) => {
     const next = [...elements];
@@ -55,34 +98,35 @@ export default function CustomIdBuilder({ value, onChange }) {
 
   const removeElement = (i) => update(elements.filter((_, idx) => idx !== i));
 
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    if (active.id !== over.id) {
+      const oldIndex = elements.findIndex(el => el.id === active.id);
+      const newIndex = elements.findIndex(el => el.id === over.id);
+      update(arrayMove(elements, oldIndex, newIndex));
+    }
+  };
+
   const preview = elements.length > 0 ? generatePreview(elements) : 'ITEM-A3F8B_001_2025';
 
   return (
     <div className="space-y-3">
-      <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-        <p className="text-xs text-slate-500 mb-1">Preview</p>
-        <code className="text-lg font-mono font-bold text-slate-800">{preview}</code>
+      <div className="bg-slate-50 dark:bg-slate-900 rounded-lg p-3 border border-slate-200 dark:border-slate-800">
+        <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Preview</p>
+        <code className="text-lg font-mono font-bold text-slate-800 dark:text-slate-200">{preview}</code>
       </div>
 
-      <div className="space-y-2">
-        {elements.map((el, i) => (
-          <div key={i} className="flex items-center gap-2 p-3 bg-white border border-slate-200 rounded-lg animate-fade-in">
-            <GripVertical size={16} className="text-slate-300 shrink-0" />
-            <select value={el.type} onChange={e => updateElement(i, { type: e.target.value })}
-              className="input w-36 shrink-0">
-              {ELEMENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-            </select>
-            <input value={el.value || ''} onChange={e => updateElement(i, { value: e.target.value })}
-              placeholder={ELEMENT_TYPES.find(t => t.value === el.type)?.desc}
-              className="input flex-1 font-mono" />
-            <button onClick={() => removeElement(i)} className="btn-icon text-red-400 hover:text-red-600">
-              <Trash2 size={15} />
-            </button>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={elements.map(e => e.id)} strategy={verticalListSortingStrategy}>
+          <div className="space-y-2">
+            {elements.map((el, i) => (
+              <SortableItem key={el.id} id={el.id} el={el} index={i} updateElement={updateElement} removeElement={removeElement} />
+            ))}
           </div>
-        ))}
-      </div>
+        </SortableContext>
+      </DndContext>
 
-      <button onClick={addElement} className="btn-secondary w-full">
+      <button type="button" onClick={addElement} className="btn-secondary w-full">
         <Plus size={15} /> Add element
       </button>
 

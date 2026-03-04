@@ -29,19 +29,36 @@ public class AdminController : ControllerBase
             query = query.Where(u => u.DisplayName.Contains(q) || (u.Email != null && u.Email.Contains(q)));
 
         var total = await query.CountAsync();
-        var users = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+        var users = await query.OrderByDescending(u => u.CreatedAt).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
 
-        var result = new List<AdminUserDto>();
-        foreach (var u in users)
-        {
-            var roles = await _userManager.GetRolesAsync(u);
-            var invCount = await _db.Inventories.CountAsync(i => i.OwnerId == u.Id);
-            result.Add(new AdminUserDto(u.Id, u.DisplayName, u.Email, u.IsBlocked, u.CreatedAt, roles, invCount));
-        }
+        // Bulk-load all roles to avoid N+1: join AspNetUserRoles + AspNetRoles
+        var userIds = users.Select(u => u.Id).ToHashSet();
+        var userRoles = await (
+            from ur in _db.UserRoles
+            join r in _db.Roles on ur.RoleId equals r.Id
+            where userIds.Contains(ur.UserId)
+            select new { ur.UserId, r.Name }
+        ).ToListAsync();
+
+        var rolesByUser = userRoles.GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Name!).ToList());
+
+        // Batch inventory counts
+        var invCounts = await _db.Inventories
+            .Where(i => userIds.Contains(i.OwnerId))
+            .GroupBy(i => i.OwnerId)
+            .Select(g => new { OwnerId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.OwnerId, g => g.Count);
+
+        var result = users.Select(u => new AdminUserDto(
+            u.Id, u.DisplayName, u.Email, u.IsBlocked, u.CreatedAt,
+            rolesByUser.TryGetValue(u.Id, out var roles) ? roles : [],
+            invCounts.TryGetValue(u.Id, out var cnt) ? cnt : 0
+        )).ToList();
+
         return Ok(new { Total = total, Users = result });
     }
 
-    // POST /api/admin/users/{id}/block
     [HttpPost("users/{id}/block")]
     public async Task<IActionResult> Block(string id)
     {
@@ -52,7 +69,6 @@ public class AdminController : ControllerBase
         return Ok();
     }
 
-    // POST /api/admin/users/{id}/unblock
     [HttpPost("users/{id}/unblock")]
     public async Task<IActionResult> Unblock(string id)
     {
@@ -63,7 +79,6 @@ public class AdminController : ControllerBase
         return Ok();
     }
 
-    // DELETE /api/admin/users/{id}
     [HttpDelete("users/{id}")]
     public async Task<IActionResult> DeleteUser(string id)
     {
@@ -73,7 +88,6 @@ public class AdminController : ControllerBase
         return NoContent();
     }
 
-    // POST /api/admin/users/{id}/make-admin
     [HttpPost("users/{id}/make-admin")]
     public async Task<IActionResult> MakeAdmin(string id)
     {
@@ -84,8 +98,7 @@ public class AdminController : ControllerBase
         return Ok();
     }
 
-    // POST /api/admin/users/{id}/remove-admin
-    // Note: Admin CAN remove their own admin role
+    // Admin CAN remove their own admin role
     [HttpPost("users/{id}/remove-admin")]
     public async Task<IActionResult> RemoveAdmin(string id)
     {
@@ -103,7 +116,6 @@ public class SearchController : ControllerBase
     private readonly ISearchService _search;
     public SearchController(ISearchService search) => _search = search;
 
-    // GET /api/search?q=query
     [HttpGet]
     public async Task<IActionResult> Search([FromQuery] string q)
     {
@@ -120,7 +132,6 @@ public class TagsController : ControllerBase
     private readonly AppDbContext _db;
     public TagsController(AppDbContext db) => _db = db;
 
-    // GET /api/tags/cloud
     [HttpGet("cloud")]
     public async Task<IActionResult> Cloud()
     {
@@ -136,7 +147,6 @@ public class TagsController : ControllerBase
             .Select(kv => new { Tag = kv.Key, Count = kv.Value }));
     }
 
-    // GET /api/tags/autocomplete?q=
     [HttpGet("autocomplete")]
     public async Task<IActionResult> Autocomplete([FromQuery] string q)
     {
@@ -144,7 +154,7 @@ public class TagsController : ControllerBase
         var allTags = await _db.Inventories.Select(i => i.Tags).ToListAsync();
         var matching = allTags
             .SelectMany(t => t.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            .Where(t => t.ToLower().Contains(q.ToLower()))
+            .Where(t => t.ToLower().StartsWith(q.ToLower()))
             .Distinct()
             .Take(10)
             .ToList();

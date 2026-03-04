@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Edit2, Trash2, Plus, Download, BarChart2, Settings, Users, Hash, Eye } from 'lucide-react';
+import { Edit2, Trash2, Plus, Download, BarChart2, Settings, Users, Hash, Eye, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { inventoriesApi, itemsApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,10 +11,12 @@ import InventoryStats from '../components/inventory/InventoryStats';
 import AccessManager from '../components/inventory/AccessManager';
 import InventoryForm from '../components/inventory/InventoryForm';
 import CustomIdBuilder from '../components/inventory/CustomIdBuilder';
+import InventoryDiscussion from '../components/inventory/InventoryDiscussion';
 import { format } from 'date-fns';
 
 const TABS = [
   { id: 'items', label: 'Items', icon: Eye },
+  { id: 'discussion', label: 'Discussion', icon: MessageSquare },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'customid', label: 'Custom ID', icon: Hash },
   { id: 'access', label: 'Access', icon: Users },
@@ -107,6 +109,11 @@ export default function InventoryPage() {
       {/* Tab Content */}
       {tab === 'items' && (
         <ItemsTable inventory={inv} canWrite={inv.canWrite} canEdit={inv.canEdit} />
+      )}
+      {tab === 'discussion' && (
+        <div className="flex justify-center">
+          <InventoryDiscussion inventoryId={Number(id)} />
+        </div>
       )}
       {tab === 'settings' && inv.canEdit && (
         <InventoryForm inventory={inv} />
